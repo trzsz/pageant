@@ -1,3 +1,10 @@
+## Credits:
+
+- Kristian Bolino for [pageant](https://github.com/kbolino/pageant)
+- Simon Tatham for [pageant](https://www.chiark.greenend.org.uk/~sgtatham)
+- David Lechner for [KeeAgent](https://github.com/dlech/KeeAgent)
+- Dominik Reichl [KeePass](https://sourceforge.net/projects/keepass)
+
 # Go Pageant client
 
 This repository contains a library for Go that provides a native
