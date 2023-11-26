@@ -1,6 +1,7 @@
 ## Credits:
 
 - Kristian Bolino for [pageant](https://github.com/kbolino/pageant)
+- Atsuhiko Yamanaka [jsch-agent-proxy-pageant](https://github.com/ymnk/jsch-agent-proxy/tree/master/jsch-agent-proxy-pageant)
 - Simon Tatham for [pageant](https://www.chiark.greenend.org.uk/~sgtatham)
 - David Lechner for [KeeAgent](https://github.com/dlech/KeeAgent)
 - Dominik Reichl [KeePass](https://sourceforge.net/projects/keepass)
