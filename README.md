@@ -74,7 +74,8 @@ The `ssh-add`, `ssh` commands of `OpenSSH for Windows` implements the same [SSH 
 as Unix/Linux, but over a `Named Pipe` instead of `Unix domain socket`.<br>
 The path to this pipe is exposed through the environment variable `SSH_AUTH_SOCK` like `\\.\pipe\somepath`<br>
 The `ssh-agent` daemon of `OpenSSH for Windows` used `Named Pipe` `\\.\pipe\openssh-ssh-agent`<br>
-The `sshd` daemon of `OpenSSH for Windows` used `Unix domain socket` like `/tmp/somepath` for some versions of Windows it works
+The `sshd` daemon of `OpenSSH for Windows` used `Unix domain socket` like `/tmp/somepath`<br>
+for some versions of Windows it works: look `sc query afunix`
 
 Replace the connection to Pageant with one to the socket:
 ```golang
