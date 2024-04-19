@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 // Package pageant provides native Go support for using PuTTY Pageant as an
 // SSH agent with the golang.org/x/crypto/ssh/agent package.
 // Based loosely on the Java JNA package jsch-agent-proxy-pageant.
@@ -9,12 +12,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
+	"github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
 )
 
@@ -45,14 +51,27 @@ type Conn struct {
 	sync.Mutex
 }
 
-// NewConn creates a new connection to Pageant.
+// NewConn creates a new connection to Pageant or to ssh-agent.exe of OpenSSH_for_Windows
 // Ensure Close gets called on the returned Conn when it is no longer needed.
 func NewConn() (net.Conn, error) {
+	const (
+		PIPE        = `\\.\pipe\`
+		sshAuthPipe = "openssh-ssh-agent"
+		sshAuthSock = "SSH_AUTH_SOCK"
+	)
 	_, err := PageantWindow()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return &Conn{}, nil
 	}
-	return &Conn{}, nil
+
+	sockPath := os.Getenv("SSH_AUTH_SOCK")
+	if sockPath == "" {
+		sockPath = sshAuthPipe
+	}
+	if !strings.HasPrefix(sockPath, PIPE) {
+		sockPath = PIPE + sockPath
+	}
+	return winio.DialPipe(sockPath, nil)
 }
 
 // for net.Conn
