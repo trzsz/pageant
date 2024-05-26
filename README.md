@@ -5,6 +5,7 @@
 - Simon Tatham for [pageant](https://www.chiark.greenend.org.uk/~sgtatham)
 - David Lechner for [KeeAgent](https://github.com/dlech/KeeAgent)
 - Dominik Reichl [KeePass](https://sourceforge.net/projects/keepass)
+- abakum for [pageant](https://github.com/abakum/pageant)
 
 # Go Pageant client
 

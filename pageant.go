@@ -74,6 +74,22 @@ func NewConn() (net.Conn, error) {
 	return winio.DialPipe(sockPath, nil)
 }
 
+// PageantAvailable returns pageant available or not.
+func PageantAvailable() bool {
+	if _, err := PageantWindow(); err == nil {
+		return true
+	}
+	return false
+}
+
+// NewPageantConn returns new connection to pageant.
+func NewPageantConn() (net.Conn, error) {
+	if !PageantAvailable() {
+		return nil, fmt.Errorf("pageant is not available")
+	}
+	return &Conn{}, nil
+}
+
 // for net.Conn
 func (c *Conn) LocalAddr() net.Addr {
 	return nil
