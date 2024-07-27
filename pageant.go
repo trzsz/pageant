@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -38,6 +39,8 @@ var (
 	sendMessage       = user32.NewProc("SendMessageW")
 )
 
+var connUniqueID atomic.Uint64
+
 // Conn is a shared-memory connection to Pageant.
 // Conn implements net.Reader, net.Writer, and net.Closer.
 // It is not safe to use Conn in multiple concurrent goroutines.
@@ -45,9 +48,10 @@ type Conn struct {
 	window     windows.Handle
 	sharedFile windows.Handle
 	sharedMem  uintptr
-	readOffset int
-	readLimit  int
 	mapName    string
+	data       chan []byte
+	buf        []byte
+	eof        bool
 	sync.Mutex
 }
 
@@ -61,7 +65,7 @@ func NewConn() (net.Conn, error) {
 	)
 	_, err := PageantWindow()
 	if err == nil {
-		return &Conn{}, nil
+		return NewPageantConn()
 	}
 
 	sockPath := os.Getenv("SSH_AUTH_SOCK")
@@ -87,7 +91,11 @@ func NewPageantConn() (net.Conn, error) {
 	if !PageantAvailable() {
 		return nil, fmt.Errorf("pageant is not available")
 	}
-	return &Conn{}, nil
+	c := &Conn{data: make(chan []byte, 10)}
+	if err := c.establishConn(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Pageant: %s", err)
+	}
+	return c, nil
 }
 
 // for net.Conn
@@ -116,6 +124,8 @@ func (c *Conn) Close() error {
 	c.Lock()
 	defer c.Unlock()
 
+	close(c.data)
+
 	errUnmap := windows.UnmapViewOfFile(c.sharedMem)
 	errClose := windows.CloseHandle(c.sharedFile)
 	if errUnmap != nil {
@@ -129,22 +139,26 @@ func (c *Conn) Close() error {
 }
 
 func (c *Conn) Read(p []byte) (n int, err error) {
-	if c.sharedMem == 0 {
-		return 0, fmt.Errorf("not connected to Pageant")
-	} else if c.readLimit == 0 {
-		return 0, fmt.Errorf("must send request to Pageant before reading response")
-	} else if c.readOffset == c.readLimit {
+	if c.eof {
 		return 0, io.EOF
 	}
 
-	c.Lock()
-	defer c.Unlock()
+	if c.sharedMem == 0 {
+		return 0, fmt.Errorf("not connected to Pageant")
+	}
 
-	bytesToRead := minInt(len(p), c.readLimit-c.readOffset)
-	src := toSlice(c.sharedMem+uintptr(c.readOffset), bytesToRead)
-	copy(p, src)
-	c.readOffset += bytesToRead
-	return bytesToRead, nil
+	if len(c.buf) == 0 {
+		var ok bool
+		c.buf, ok = <-c.data
+		if !ok {
+			c.eof = true
+			return 0, io.EOF
+		}
+	}
+
+	n = copy(p, c.buf)
+	c.buf = c.buf[n:]
+	return
 }
 
 // close, establishConn, sendMessage
@@ -154,19 +168,13 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 	} else if len(p) == 0 {
 		return 0, fmt.Errorf("message to send is empty")
 	}
-	if c.sharedMem != 0 {
-		err := c.Close()
-		if c.sharedMem != 0 {
-			return 0, fmt.Errorf("failed to close previous connection: %s", err)
-		}
-	}
-
-	if err := c.establishConn(); err != nil {
-		return 0, fmt.Errorf("failed to connect to Pageant: %s", err)
-	}
 
 	c.Lock()
 	defer c.Unlock()
+
+	if c.sharedMem == 0 {
+		return 0, fmt.Errorf("not connected to Pageant")
+	}
 
 	dst := toSlice(c.sharedMem, len(p))
 	copy(dst, p)
@@ -184,8 +192,12 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 	if messageSize > agentMaxMsglen-4 {
 		return 0, fmt.Errorf("size of response message (%d) exceeds max length (%d)", messageSize+4, agentMaxMsglen)
 	}
-	c.readOffset = 0
-	c.readLimit = 4 + int(messageSize)
+
+	buf := make([]byte, 4+int(messageSize))
+	src := toSlice(c.sharedMem, 4+int(messageSize))
+	copy(buf, src)
+	c.data <- buf
+
 	return len(p), nil
 }
 
@@ -214,7 +226,7 @@ func (c *Conn) establishConn() error {
 		return err
 	}
 
-	mapName := fmt.Sprintf("PageantRequest%08x", windows.GetCurrentThreadId())
+	mapName := fmt.Sprintf("PageantRequest_%x_%x", os.Getpid(), connUniqueID.Add(1))
 	mapNameUTF16 := utf16Ptr(mapName)
 	sharedFile, err := windows.CreateFileMapping(
 		windows.InvalidHandle,
@@ -237,12 +249,10 @@ func (c *Conn) establishConn() error {
 	if err != nil {
 		return fmt.Errorf("failed to map file into shared memory: %s", err)
 	}
-	*c = Conn{
-		window:     windows.Handle(window),
-		sharedFile: sharedFile,
-		sharedMem:  sharedMem,
-		mapName:    mapName,
-	}
+	c.window = windows.Handle(window)
+	c.sharedFile = sharedFile
+	c.sharedMem = sharedMem
+	c.mapName = mapName
 	return nil
 }
 
